@@ -4,11 +4,15 @@ import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
 import com.qingcheng.dao.AdMapper;
 import com.qingcheng.entity.PageResult;
+import com.qingcheng.pojo.CacheKey;
 import com.qingcheng.pojo.business.Ad;
 import com.qingcheng.service.business.AdService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import tk.mybatis.mapper.entity.Example;
 
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -17,6 +21,9 @@ public class AdServiceImpl implements AdService {
 
     @Autowired
     private AdMapper adMapper;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     /**
      * 返回全部记录
@@ -77,6 +84,7 @@ public class AdServiceImpl implements AdService {
      */
     public void add(Ad ad) {
         adMapper.insert(ad);
+        saveAdToRedisByPosition(ad.getPosition());
     }
 
     /**
@@ -84,7 +92,12 @@ public class AdServiceImpl implements AdService {
      * @param ad
      */
     public void update(Ad ad) {
+        String position = adMapper.selectByPrimaryKey(ad).getPosition();
         adMapper.updateByPrimaryKeySelective(ad);
+        saveAdToRedisByPosition(position);
+        if (!ad.getPosition().equals(position)){
+            saveAdToRedisByPosition(ad.getPosition());
+        }
     }
 
     /**
@@ -92,8 +105,50 @@ public class AdServiceImpl implements AdService {
      * @param id
      */
     public void delete(Integer id) {
+        String position = adMapper.selectByPrimaryKey(id).getPosition();
         adMapper.deleteByPrimaryKey(id);
+        saveAdToRedisByPosition(position);
     }
+
+    @Override
+    public List<Ad> findPageByPosition(String position) {
+        return  (List<Ad>) redisTemplate.boundHashOps(CacheKey.AD).get(position);
+//
+//        Example example = new Example(Ad.class);
+//        Example.Criteria criteria = example.createCriteria();
+//        criteria.andLessThanOrEqualTo("startTime",new Date());
+//        criteria.andGreaterThanOrEqualTo("endTime",new Date());
+//        criteria.andEqualTo("position",position);
+//        return adMapper.selectByExample(example);
+    }
+
+    @Override
+    public void saveAdToRedisByPosition(String position) {
+        Example example = new Example(Ad.class);
+        Example.Criteria criteria = example.createCriteria();
+        criteria.andLessThanOrEqualTo("startTime", new Date());
+        criteria.andGreaterThanOrEqualTo("endTime", new Date());
+        criteria.andEqualTo("position", position);
+        criteria.andEqualTo("status", "1");
+        List<Ad> ads = adMapper.selectByExample(example);
+        redisTemplate.boundHashOps(CacheKey.AD).put(position, ads);
+    }
+
+    @Override
+    public void saveAllAdToRedis() {
+        List<String> positionList = findAllPositionList();
+        for (String position : positionList) {
+            saveAdToRedisByPosition(position);
+        }
+    }
+
+    private List<String> findAllPositionList() {
+        List<String> positionList = new ArrayList<>();
+        positionList.add("index_lb");
+//        positionList.add("")
+        return positionList;
+    }
+
 
     /**
      * 构建查询条件

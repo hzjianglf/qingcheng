@@ -35,7 +35,7 @@ public class UploadController {
         return "http://localhost:9101/img/"+file.getOriginalFilename();
     }
 
-    @Autowired
+    /*@Autowired
     private OSSClient ossClient;
 
     @PostMapping("/oss")
@@ -48,7 +48,7 @@ public class UploadController {
             e.printStackTrace();
         }
         return "http://"+bucketName+"."+ ossClient.getEndpoint().toString().replace("http://","") +"/"+fileName;
-    }
+    }*/
 
 
 }

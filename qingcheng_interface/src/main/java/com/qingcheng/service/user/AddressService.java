@@ -32,4 +32,7 @@ public interface AddressService {
 
     public void delete(Integer id);
 
+    List<Address> findByUsername(String username);
+
+
 }

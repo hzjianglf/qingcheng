@@ -5,11 +5,15 @@ import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
 import com.qingcheng.dao.CategoryMapper;
 import com.qingcheng.entity.PageResult;
+import com.qingcheng.pojo.CacheKey;
 import com.qingcheng.pojo.goods.Category;
 import com.qingcheng.service.goods.CategoryService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import tk.mybatis.mapper.entity.Example;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +22,9 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Autowired
     private CategoryMapper categoryMapper;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     /**
      * 返回全部记录
@@ -84,6 +91,7 @@ public class CategoryServiceImpl implements CategoryService {
      */
     public void add(Category category) {
         categoryMapper.insert(category);
+        saveCategoryTreeToRedis();
     }
 
     /**
@@ -93,6 +101,7 @@ public class CategoryServiceImpl implements CategoryService {
      */
     public void update(Category category) {
         categoryMapper.updateByPrimaryKeySelective(category);
+        saveCategoryTreeToRedis();
     }
 
     /**
@@ -106,10 +115,49 @@ public class CategoryServiceImpl implements CategoryService {
         criteria.andEqualTo("parentId", id);
         int count = categoryMapper.selectCountByExample(example);
         if (count > 0) {
-         throw new RuntimeException("存在下级分类不能删除！");
+            throw new RuntimeException("存在下级分类不能删除！");
         }
         categoryMapper.deleteByPrimaryKey(id);
+        saveCategoryTreeToRedis();
     }
+
+    @Override
+    public List<Map> findCategoryTree() {
+        List<Map> result = (List<Map>) redisTemplate.boundValueOps(CacheKey.CATEGORY_TREE).get();
+        if (result == null || result.size() == 0) {
+            Example example = new Example(Category.class);
+            Example.Criteria criteria = example.createCriteria();
+            criteria.andEqualTo("isShow", "1");
+            List<Category> categories = categoryMapper.selectByExample(example);
+            result = findCategoryByParentId(categories, 0);
+        }
+        return result;
+    }
+
+    @Override
+    public void saveCategoryTreeToRedis() {
+        System.out.println("save category tree to redis");
+        Example example = new Example(Category.class);
+        Example.Criteria criteria = example.createCriteria();
+        criteria.andEqualTo("isShow", "1");
+        List<Category> categories = categoryMapper.selectByExample(example);
+        List<Map> categoryList = findCategoryByParentId(categories, 0);
+        redisTemplate.boundValueOps(CacheKey.CATEGORY_TREE).set(categoryList);
+    }
+
+    private List<Map> findCategoryByParentId(List<Category> categories, Integer s) {
+        List<Map> list = new ArrayList<>();
+        for (Category category : categories) {
+            if (category.getParentId().equals(s)) {
+                Map map = new HashMap();
+                map.put("name", category.getName());
+                map.put("menus", findCategoryByParentId(categories, category.getId()));
+                list.add(map);
+            }
+        }
+        return list;
+    }
+
 
     /**
      * 构建查询条件

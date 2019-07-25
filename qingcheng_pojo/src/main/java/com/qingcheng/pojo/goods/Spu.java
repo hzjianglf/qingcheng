@@ -213,6 +213,31 @@ public class Spu implements Serializable{
 		this.status = status;
 	}
 
-
-	
+	@Override
+	public String toString() {
+		return "Spu{" +
+				"id='" + id + '\'' +
+				", sn='" + sn + '\'' +
+				", name='" + name + '\'' +
+				", caption='" + caption + '\'' +
+				", brandId=" + brandId +
+				", category1Id=" + category1Id +
+				", category2Id=" + category2Id +
+				", category3Id=" + category3Id +
+				", templateId=" + templateId +
+				", freightId=" + freightId +
+				", image='" + image + '\'' +
+				", images='" + images + '\'' +
+				", saleService='" + saleService + '\'' +
+				", introduction='" + introduction + '\'' +
+				", specItems='" + specItems + '\'' +
+				", paraItems='" + paraItems + '\'' +
+				", saleNum=" + saleNum +
+				", commentNum=" + commentNum +
+				", isMarketable='" + isMarketable + '\'' +
+				", isEnableSpec='" + isEnableSpec + '\'' +
+				", isDelete='" + isDelete + '\'' +
+				", status='" + status + '\'' +
+				'}';
+	}
 }

@@ -4,10 +4,7 @@ import com.alibaba.dubbo.config.annotation.Service;
 import com.alibaba.fastjson.JSON;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
-import com.qingcheng.dao.CategoryBrandMapper;
-import com.qingcheng.dao.CategoryMapper;
-import com.qingcheng.dao.SkuMapper;
-import com.qingcheng.dao.SpuMapper;
+import com.qingcheng.dao.*;
 import com.qingcheng.entity.PageResult;
 import com.qingcheng.pojo.goods.*;
 import com.qingcheng.service.goods.SpuService;
@@ -17,10 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tk.mybatis.mapper.entity.Example;
 
 import javax.xml.crypto.Data;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service(interfaceClass = SpuService.class)
 public class SpuServiceImpl implements SpuService {
@@ -39,6 +33,12 @@ public class SpuServiceImpl implements SpuService {
 
     @Autowired
     private CategoryBrandMapper categoryBrandMapper;
+
+    @Autowired
+    private CheckMapper checkMapper;
+
+    @Autowired
+    private OperatingLogMapper operatingLogMapper;
 
 
     /**
@@ -120,10 +120,97 @@ public class SpuServiceImpl implements SpuService {
     /**
      * 删除
      *
-     * @param id
+     * @param ids
      */
-    public void delete(String id) {
-        spuMapper.deleteByPrimaryKey(id);
+    public int delete(String ids) {
+        int count = 0;
+        List<String> idList = new ArrayList<>();
+        if (ids.contains(",")){
+            idList = Arrays.asList(ids.split(","));
+        }else {
+            idList.add(ids);
+        }
+        for (String id : idList) {
+            Spu spu = spuMapper.selectByPrimaryKey(id);
+            if ("1".equals(spu.getIsDelete())){
+                continue;
+            }
+            spu.setIsDelete("1");
+            count+=spuMapper.updateByPrimaryKeySelective(spu);
+            // 日志相关
+            OperatingLog operatingLog = new OperatingLog();
+            operatingLog.setSpuId(id);
+            operatingLog.setOperatingTime(new Date());
+//                operatingLog.setUserId();
+//                operatingLog.setUsername();
+            operatingLog.setParamName("是否删除商品");
+            operatingLog.setPreValue("0");
+            operatingLog.setCurrentValue("1");
+            operatingLogMapper.insert(operatingLog);
+        }
+        return count;
+    }
+
+    @Override
+    public int resume(String ids) {
+        int count = 0;
+        List<String> idList = new ArrayList<>();
+        if (ids.contains(",")){
+            idList = Arrays.asList(ids.split(","));
+        }else {
+            idList.add(ids);
+        }
+        for (String id : idList) {
+            Spu spu = spuMapper.selectByPrimaryKey(id);
+            if ("0".equals(spu.getIsDelete())){
+                continue;
+            }
+            spu.setIsDelete("0");
+            count+=spuMapper.updateByPrimaryKeySelective(spu);
+            // 日志相关
+            OperatingLog operatingLog = new OperatingLog();
+            operatingLog.setSpuId(id);
+            operatingLog.setOperatingTime(new Date());
+//                operatingLog.setUserId();
+//                operatingLog.setUsername();
+            operatingLog.setParamName("是否删除商品");
+            operatingLog.setPreValue("1");
+            operatingLog.setCurrentValue("0");
+            operatingLogMapper.insert(operatingLog);
+        }
+        return count;
+    }
+
+    @Override
+    public int clear(String ids) {
+        int count = 0;
+        List<String> idList = new ArrayList<>();
+        if (ids.contains(",")){
+            idList = Arrays.asList(ids.split(","));
+        }else {
+            idList.add(ids);
+        }
+        for (String id : idList) {
+            Spu spu = spuMapper.selectByPrimaryKey(id);
+            if ("1".equals(spu.getIsDelete())){
+                Example example = new Example(Sku.class);
+                Example.Criteria criteria = example.createCriteria();
+                criteria.andEqualTo("spuId",id);
+                skuMapper.deleteByExample(example);
+                count+=spuMapper.deleteByPrimaryKey(id);
+            }
+            // 日志相关
+            OperatingLog operatingLog = new OperatingLog();
+            operatingLog.setSpuId(id);
+            operatingLog.setOperatingTime(new Date());
+//                operatingLog.setUserId();
+//                operatingLog.setUsername();
+            operatingLog.setParamName("永久删除商品");
+            operatingLog.setPreValue(id);
+            operatingLog.setCurrentValue("null");
+            operatingLogMapper.insert(operatingLog);
+        }
+        return count;
     }
 
     /**
@@ -187,6 +274,9 @@ public class SpuServiceImpl implements SpuService {
     public void saveGoods(Goods goods) {
         boolean isUpdate = true;
         Spu spu = goods.getSpu();
+        if(spu.getStatus()==null){
+            spu.setStatus(0+"");
+        }
         if (spu.getId() == null || "".equals(spu.getId())) {
             spu.setId(String.valueOf(idWorker.nextId()));
             spuMapper.insert(spu);
@@ -194,7 +284,7 @@ public class SpuServiceImpl implements SpuService {
             spuMapper.updateByPrimaryKey(spu);
             Example example = new Example(Sku.class);
             Example.Criteria criteria = example.createCriteria();
-            criteria.andEqualTo("spuId",spu.getId());
+            criteria.andEqualTo("spuId", spu.getId());
             skuMapper.deleteByExample(example);
         }
         Category category = categoryMapper.selectByPrimaryKey(spu.getCategory3Id());
@@ -208,12 +298,12 @@ public class SpuServiceImpl implements SpuService {
             categoryBrandMapper.insert(categoryBrand);
         }
         for (Sku sku : skuList) {
-            if (sku.getId()==null||"".equals(sku.getId())){
-            sku.setId(idWorker.nextId() + "");
+            if (sku.getId() == null || "".equals(sku.getId())) {
+                sku.setId(idWorker.nextId() + "");
                 sku.setCreateTime(now);
             }
             String name = spu.getName();
-            if (sku.getSpec()==null||"".equals(sku.getSpec())){
+            if (sku.getSpec() == null || "".equals(sku.getSpec())) {
                 sku.setSpec("{}");
             }
             Map<String, String> specMap = (Map<String, String>) JSON.parse(sku.getSpec());
@@ -240,6 +330,108 @@ public class SpuServiceImpl implements SpuService {
         criteria.andEqualTo("spuId", id);
         goods.setSkuList(skuMapper.selectByExample(example));
         return goods;
+    }
+
+    /**
+     * 商品上架
+     *  Tip:需审核通过
+     * @param ids 商品spuId，使用","连接
+     */
+    @Override
+    public int marketable(String ids) {
+        int count = 0;
+        List<String> idList = new ArrayList<>();
+        if (ids.contains(",")){
+            idList = Arrays.asList(ids.split(","));
+        }else {
+            idList.add(ids);
+        }
+        for (String id : idList) {
+            Spu spu = new Spu();
+            spu.setId(id);
+            Spu spu2 = spuMapper.selectByPrimaryKey(id);
+            System.out.println(spu2);
+            Spu spu1 = spuMapper.selectByPrimaryKey(spu);
+            System.out.println("------------------------------------");
+            System.out.println(spu1);
+            if ("1".equals(spu1.getStatus())&&!"1".equals(spu1.getIsMarketable())){
+                spu1.setIsMarketable("1");
+                spuMapper.updateByPrimaryKeySelective(spu1);
+                count++;
+                // 日志相关
+                OperatingLog operatingLog = new OperatingLog();
+                operatingLog.setSpuId(id);
+                operatingLog.setOperatingTime(new Date());
+//                operatingLog.setUserId();
+//                operatingLog.setUsername();
+                operatingLog.setParamName("是否上架");
+                operatingLog.setPreValue("0");
+                operatingLog.setCurrentValue("1");
+                operatingLogMapper.insert(operatingLog);
+            }
+        }
+        return count;
+    }
+
+    @Override
+    public int disMarketable(String ids) {
+        int count = 0;
+        List<String> idList = new ArrayList<>();
+        if (ids.contains(",")){
+            idList = Arrays.asList(ids.split(","));
+        }else {
+            idList.add(ids);
+        }
+        for (String id : idList) {
+            Spu spu = new Spu();
+            spu.setId(id);
+            Spu spu1 = spuMapper.selectByPrimaryKey(spu);
+            if ("1".equals(spu1.getStatus())&&"1".equals(spu1.getIsMarketable())){
+                spu1.setIsMarketable("0");
+                spuMapper.updateByPrimaryKeySelective(spu1);
+                count++;
+                // 日志相关
+                OperatingLog operatingLog = new OperatingLog();
+                operatingLog.setSpuId(id);
+                operatingLog.setOperatingTime(new Date());
+//                operatingLog.setUserId();
+//                operatingLog.setUsername();
+                operatingLog.setParamName("是否上架");
+                operatingLog.setPreValue("1");
+                operatingLog.setCurrentValue("0");
+                operatingLogMapper.insert(operatingLog);
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 商品审核
+     * @param id
+     * @param status
+     * @param massage
+     */
+    @Override
+    @Transactional
+    public void audit(String id, String status, String massage) {
+        Spu spu = new Spu();
+        spu.setId(id);
+        spu.setStatus(status);
+        if (status.equals("1")) {//审核通过 自动上架
+            spu.setIsMarketable("1");
+        }
+        spuMapper.updateByPrimaryKeySelective(spu);
+        Check check = new Check();
+        check.setId(idWorker.nextId()+"");
+        check.setSpuId(id);
+        check.setCheckReason(massage);
+        check.setCheckTime(new Date());
+        check.setCheckStatus(status);
+        check.setSpuName(spuMapper.selectByPrimaryKey(spu).getName());
+//        暂无
+//        check.setCheckerId(0);
+//        check.setCheckerName("");
+        checkMapper.insert(check);
     }
 
     /**

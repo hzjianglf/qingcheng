@@ -31,10 +31,47 @@ public interface SpuService {
     public void update(Spu spu);
 
 
-    public void delete(String id);
+    /**
+     * 删除商品 逻辑删除
+     * @param ids 商品spuId，使用","连接
+     * @return
+     */
+    public int delete(String ids);
+
+    /**
+     * 回复逻辑删除的商品
+     * @param ids 商品spuId，使用","连接
+     * @return
+     */
+    public int resume(String ids);
+
+    /**
+     * 删除商品 永久删除
+     * @param ids 商品spuId，使用","连接
+     * @return
+     */
+    public int clear(String ids);
 
     void saveGoods(Goods goods);
 
     Goods findGoodsById(String id);
+
+    /**
+     * 商品上架
+     * @param ids 商品spuId，使用","连接
+     * @return  操作成功条数
+     */
+    int marketable(String ids);
+
+    int disMarketable(String ids);
+
+    /**
+     * 审核商品
+     * @param id
+     * @param status
+     * @param massage
+     */
+    public void audit(String id,String status,String massage);
+
 
 }

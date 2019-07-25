@@ -60,4 +60,9 @@ public class MenuController {
         return new Result();
     }
 
+    @GetMapping("/all")
+    public List<Map> findAllMenu(){
+        return menuService.findAllMenu();
+    }
+
 }

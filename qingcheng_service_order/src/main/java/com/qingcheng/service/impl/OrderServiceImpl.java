@@ -2,21 +2,46 @@ package com.qingcheng.service.impl;
 import com.alibaba.dubbo.config.annotation.Service;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
+import com.qingcheng.dao.OrderItemMapper;
+import com.qingcheng.dao.OrderLogMapper;
 import com.qingcheng.dao.OrderMapper;
 import com.qingcheng.entity.PageResult;
 import com.qingcheng.pojo.order.Order;
+import com.qingcheng.pojo.order.OrderInfo;
+import com.qingcheng.pojo.order.OrderItem;
+import com.qingcheng.pojo.order.OrderLog;
+import com.qingcheng.service.goods.SkuService;
+import com.qingcheng.service.order.CartService;
 import com.qingcheng.service.order.OrderService;
+import com.qingcheng.utils.IdWorker;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 import tk.mybatis.mapper.entity.Example;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
-@Service
+@Service(interfaceClass =OrderService.class)
 public class OrderServiceImpl implements OrderService {
 
     @Autowired
     private OrderMapper orderMapper;
+
+    @Autowired
+    private OrderItemMapper orderItemMapper;
+
+    @Autowired
+    private OrderLogMapper orderLogMapper;
+
+    @Autowired
+    private IdWorker idWorker;
+
+    @Autowired
+    private CartService cartService;
+
+    @Autowired
+    private SkuService skuService;
 
     /**
      * 返回全部记录
@@ -75,8 +100,42 @@ public class OrderServiceImpl implements OrderService {
      * 新增
      * @param order
      */
-    public void add(Order order) {
+    public Map<String,Object> add(Order order) {
+        List<Map<String, Object>> orderItemList = cartService.findNewOrderItemList(order.getUsername());
+        List<OrderItem> orderItems = orderItemList.stream().filter(cart -> (boolean) cart.get("checked")).map(cart -> (OrderItem) cart.get("item")).collect(Collectors.toList());
+        if (!skuService.deductionStock(orderItems)) {
+            throw new RuntimeException("扣减库存失败！");
+        }
+        order.setId(idWorker.nextId() + "");
+        IntStream numStream = orderItems.stream().mapToInt(OrderItem::getNum);
+        IntStream moneyStream = orderItems.stream().mapToInt(OrderItem::getMoney);
+        int toatalNum = numStream.sum();
+        int totalMoney = moneyStream.sum();
+        int preMoney = cartService.preferential(order.getUsername());
+        order.setTotalNum(toatalNum);
+        order.setTotalMoney(totalMoney);
+        order.setPreMoney(preMoney);
+        order.setPayMoney(totalMoney - preMoney);
+        order.setCreateTime(new Date());
+        order.setPayStatus("0"); // 0：未支付
+        order.setOrderStatus("0"); // 订单状态
+        order.setConsignStatus("0"); // 发货状态
         orderMapper.insert(order);
+
+        double proportion = (double) order.getPayMoney() / totalMoney;
+        //保存订单明细
+        for (OrderItem orderItem : orderItems) {
+            orderItem.setOrderId(order.getId());
+            orderItem.setId(idWorker.nextId() + "");
+            orderItem.setPayMoney((int) (orderItem.getMoney() * proportion));
+            orderItemMapper.insert(orderItem);
+        }
+        // 清除缓存中的购物车
+        cartService.deleteCheckedCart(order.getUsername());
+        Map<String, Object> map = new HashMap<>();
+        map.put("ordersn", order.getId());
+        map.put("money", order.getPayMoney());
+        return map;
     }
 
     /**
@@ -94,6 +153,52 @@ public class OrderServiceImpl implements OrderService {
     public void delete(String id) {
         orderMapper.deleteByPrimaryKey(id);
     }
+
+    @Override
+    public OrderInfo findOrderInfoById(String id) {
+        OrderInfo orderInfo = new OrderInfo();
+        orderInfo.setOrder(orderMapper.selectByPrimaryKey(id));
+        Example example =new Example(OrderItem.class);
+        Example.Criteria criteria = example.createCriteria();
+        criteria.andEqualTo("orderId",id);
+        List<OrderItem> orderItems = orderItemMapper.selectByExample(example);
+        orderInfo.setOrderItems(orderItems);
+        return orderInfo;
+    }
+
+    @Override
+    @Transactional
+    public void sendOrder(List<Order> orders) {
+        if (orders!=null&&orders.size()!=0){
+            for (Order order : orders) {
+                Date now = new Date();
+                order.setConsignTime(now);
+                order.setConsignStatus("1");
+                OrderLog orderLog = new OrderLog();
+                orderLog.setId(String.valueOf(idWorker.nextId()));
+                orderLog.setConsignStatus("1");
+                orderLog.setOperater("");
+                orderLog.setOperateTime(now);
+                orderLog.setPayStatus(order.getPayStatus());
+                orderLog.setRemarks("");
+                orderLog.setOrderId(Long.parseLong(order.getId()));
+                orderLogMapper.insert(orderLog);
+                orderMapper.updateByPrimaryKey(order);
+            }
+        }
+    }
+
+    @Override
+    public void agreeRefund(String id) {
+
+    }
+
+    @Override
+    public void refuse(String id, String message) {
+
+    }
+
+
 
     /**
      * 构建查询条件

@@ -32,4 +32,12 @@ public interface PreferentialService {
 
     public void delete(Integer id);
 
+    /**
+     * 根据消费额和品类获取优惠金额
+     * @param categoryId
+     * @param money
+     * @return
+     */
+    int findPreMoneyByCategoryId(Integer categoryId, int money);
+
 }

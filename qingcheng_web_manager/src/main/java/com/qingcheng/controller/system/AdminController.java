@@ -4,7 +4,16 @@ import com.alibaba.dubbo.config.annotation.Reference;
 import com.qingcheng.entity.PageResult;
 import com.qingcheng.entity.Result;
 import com.qingcheng.pojo.system.Admin;
+import com.qingcheng.pojo.system.LoginLog;
 import com.qingcheng.service.system.AdminService;
+import com.qingcheng.service.system.LoginLogService;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -14,7 +23,10 @@ import java.util.*;
 public class AdminController {
 
     @Reference
-    private AdminService adminService;
+    public AdminService adminService;
+
+    @Reference
+    private LoginLogService loginLogService;
 
     @GetMapping("/findAll")
     public List<Admin> findAll(){
@@ -60,4 +72,18 @@ public class AdminController {
         return new Result();
     }
 
+    @GetMapping("/showName")
+    public Map showName(){
+        String name = SecurityContextHolder.getContext().getAuthentication().getName();
+        Map<String, String> map = new HashMap<>();
+        map.put("name",name);
+        return map;
+    }
+
+    @GetMapping("/findPageByLogin")
+    public PageResult<LoginLog> findPageByLogin(int page, int size){
+        Map<String, Object> map = new HashMap<>();
+        map.put("loginName",SecurityContextHolder.getContext().getAuthentication().getName());
+        return loginLogService.findPage(map, page, size);
+    }
 }

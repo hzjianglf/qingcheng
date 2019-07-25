@@ -4,20 +4,27 @@ import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
 import com.qingcheng.dao.SkuMapper;
 import com.qingcheng.entity.PageResult;
+import com.qingcheng.pojo.CacheKey;
 import com.qingcheng.pojo.goods.Sku;
+import com.qingcheng.pojo.order.OrderItem;
 import com.qingcheng.service.goods.SkuService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import tk.mybatis.mapper.entity.Example;
 
 import java.util.List;
 import java.util.Map;
 
-@Service
+
+@Service(interfaceClass = SkuService.class)
 public class SkuServiceImpl implements SkuService {
 
     @Autowired
     private SkuMapper skuMapper;
 
+    @Autowired
+    private RedisTemplate redisTemplate;
     /**
      * 返回全部记录
      * @return
@@ -93,6 +100,59 @@ public class SkuServiceImpl implements SkuService {
      */
     public void delete(String id) {
         skuMapper.deleteByPrimaryKey(id);
+    }
+
+    @Override
+    public void saveAllPriceToRedis() {
+        if (redisTemplate.hasKey(CacheKey.SKU_PRICE)){
+            System.out.println("缓存中已存在价格数据");
+        }else {
+            List<Sku> skuList = skuMapper.selectAll();
+            for (Sku sku : skuList) {
+                if ("1".equals(sku.getStatus())) {
+                    redisTemplate.boundHashOps(CacheKey.SKU_PRICE).put(sku.getId(), sku.getPrice());
+                }
+            }
+        }
+    }
+
+    @Override
+    public Integer findPrice(String id) {
+        return (Integer) redisTemplate.boundHashOps(CacheKey.SKU_PRICE).get(id);
+    }
+
+    /**
+     * 删减库存
+     * @param orderItems
+     * @return
+     */
+    @Transactional
+    @Override
+    public boolean deductionStock(List<OrderItem> orderItems) {
+        // 能否扣减库存
+        boolean deduction = true;
+        for (OrderItem orderItem : orderItems) {
+            Sku sku = findById(orderItem.getSkuId());
+            if (sku==null){
+                deduction = false;
+                break;
+            }
+            if (!sku.getStatus().equals("1")) {
+                deduction = false;
+                break;
+            }
+            if (sku.getNum().intValue() < orderItem.getNum().intValue()) {
+                deduction = false;
+                break;
+            }
+        }
+        if (deduction) {
+            for (OrderItem orderItem : orderItems) {
+                skuMapper.deductionStock(orderItem.getSkuId(), orderItem.getNum());
+                skuMapper.addSaleNum(orderItem.getId(),orderItem.getNum());
+            }
+        }
+        return deduction;
     }
 
     /**
